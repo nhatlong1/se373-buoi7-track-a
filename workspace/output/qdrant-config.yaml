@@ -1,0 +1,30 @@
+# Qdrant server config tuned for a 12 GB shared host.
+# Goal: keep RSS under ~1.5 GB for a ~1M x 384 int8 collection.
+
+log_level: INFO
+
+storage:
+  # Keep small segments in RAM, push larger ones to disk (mmap).
+  optimizers:
+    memmap_threshold_kb: 20000
+    indexing_threshold_kb: 20000
+    default_segment_number: 4
+    vacuum_min_vector_number: 1000
+  # Store payload (including the text index) on disk instead of RAM.
+  on_disk_payload: true
+  # int8 scalar quantization: ~4x smaller vectors, negligible recall loss.
+  quantization:
+    scalar:
+      type: int8
+      always_ram: false
+
+performance:
+  # 4 vCPU shared with Postgres, MinIO and the backend: stay conservative.
+  max_search_threads: 2
+  max_optimization_threads: 1
+  max_workers_threads: 2
+
+service:
+  max_request_size_mb: 32
+  # Keep the dashboard available but it is not needed in production.
+  enable_cors: false

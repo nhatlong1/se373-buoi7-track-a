@@ -1,0 +1,25 @@
+2026-10-23 03:31:04,208 ERROR Traceback (most recent call last):
+  File "D:\projects\python\BTTH5_tool_skills\personal-agent\app.py", line 554, in run_turn
+    refresh()
+  File "D:\projects\python\BTTH5_tool_skills\personal-agent\app.py", line 502, in refresh
+    render_state_panel(interactive=False)
+  File "D:\projects\python\BTTH5_tool_skills\personal-agent\app.py", line 454, in render_state_panel
+    render_memory_pane()
+  File "D:\projects\python\BTTH5_tool_skills\personal-agent\app.py", line 324, in render_memory_pane
+    choice = st.selectbox("Inspect memory file", options, key="memory_select_choice")
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\projects\python\BTTH5_tool_skills\personal-agent\.venv\Lib\site-packages\streamlit\runtime\metrics_util.py", line 725, in wrapped_func
+    result = non_optional_func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\projects\python\BTTH5_tool_skills\personal-agent\.venv\Lib\site-packages\streamlit\elements\widgets\selectbox.py", line 635, in selectbox
+    return self._selectbox(
+           ^^^^^^^^^^^^^^^^
+  File "D:\projects\python\BTTH5_tool_skills\personal-agent\.venv\Lib\site-packages\streamlit\elements\widgets\selectbox.py", line 721, in _selectbox
+    element_id = compute_and_register_element_id(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\projects\python\BTTH5_tool_skills\personal-agent\.venv\Lib\site-packages\streamlit\elements\lib\utils.py", line 318, in compute_and_register_element_id
+    _register_element_id(ctx, element_type, element_id)
+  File "D:\projects\python\BTTH5_tool_skills\personal-agent\.venv\Lib\site-packages\streamlit\elements\lib\utils.py", line 200, in _register_element_id
+    raise StreamlitDuplicateElementKey(user_key)
+streamlit.errors.StreamlitDuplicateElementKey: There are multiple elements with the same `key='memory_select_choice'`. To fix this, please make sure that the `key` argument is unique for each element you create.
+

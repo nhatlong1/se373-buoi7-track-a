@@ -1,0 +1,65 @@
+# SE373 final project - single-host stack (4 vCPU / 12 GB RAM)
+# Memory limits are deliberate: they enforce the budget from the decision record.
+# Pin image versions before your final submission for reproducibility.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    command:
+      - postgres
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - effective_cache_size=3GB
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - max_connections=50
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    mem_limit: 2g
+    ports:
+      - "5432:5432"
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - miniodata:/data
+    mem_limit: 768m
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    volumes:
+      - qdrantdata:/qdrant/storage
+      - ./qdrant-config.yaml:/qdrant/config/production.yaml:ro
+    mem_limit: 2g
+    ports:
+      - "6333:6333"   # REST
+      - "6334:6334"   # gRPC
+
+  # Your FastAPI backend. Build from your own Dockerfile.
+  # The embedding model is loaded in-process via ONNX Runtime (int8).
+  # backend:
+  #   build: .
+  #   depends_on: [postgres, minio, qdrant]
+  #   mem_limit: 1536m
+  #   ports:
+  #     - "8000:8000"
+
+volumes:
+  pgdata:
+  miniodata:
+  qdrantdata:
