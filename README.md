@@ -48,6 +48,14 @@ uv run streamlit run app.py
 
 # run tests
 uv run pytest
+
+# inspect past conversation traces (GUI)
+uv run streamlit run viewer.py
+
+# inspect traces via CLI
+uv run python viewer.py --list
+uv run python viewer.py <conv_id> --summary
+uv run python viewer.py <conv_id> --transcript
 ```
 
 ## Featured trace run:
