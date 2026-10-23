@@ -1,9 +1,9 @@
 ---
-name: "se373-bizcare-project"
-description: "BizCare helpdesk agent project spec (SE373 Group 02): scope, 6 use cases, K1-K8 knowledge areas, quality thresholds, sample workspaces, architecture"
+name: "se374-bizcare-project"
+description: "BizCare helpdesk agent project spec (SE374 Group 02): scope, 6 use cases, K1-K8 knowledge areas, quality thresholds, sample workspaces, architecture, three data stores"
 ---
 
-- Project: BizCare - AI customer support (CSKH) platform for small Vietnamese businesses, multi-tenant. SE373 Group 02, dated 18/10/2026.
+- Project: BizCare - AI customer support (CSKH) platform for small Vietnamese businesses, multi-tenant. SE374 Group 02, dated 18/10/2026.
 - Architecture principle: agent = model + harness. Model generates text/decides; harness provides workspace KB access, realizes actions via tools, accesses customer profile memory, masks PII, stores traces.
 - Channels: website chat widget + Facebook Messenger (dev mode, 24h window). Software: business Portal, customer channel, staff Inbox.
 - Roles: business owner/workspace admin, support agent (CSKH staff), end customer.
@@ -12,7 +12,6 @@ description: "BizCare helpdesk agent project spec (SE373 Group 02): scope, 6 use
 - Sample workspaces (fictional): moc-mien-florist (retail flowers, Can Tho, 29 docs) and iron-viet-fitness (gym services, HCMC, 20 docs). Each has >=20 docs in 4 format groups: Plaintext (TXT/MD/HTML), PDF, Tables (CSV/XLSX). Each has a policy file (refund threshold, return days, max discount, approval categories) and a brand voice file (form of address, tone, forbidden words, answer length).
 - KB design: document store (originals, versions, effective status) + vector database (embedded chunks), sharing doc_id. Chunk metadata required: doc_id, workspace_id, title, uri, section, chunk_index, updated_at, doc_type (markdown/html/pdf/csv/xlsx), version, status (active/superseded).
 - Vector DB requirement (spec 2.2.b): ONE COLLECTION PER WORKSPACE; agent locked to its workspace; no cross-collection queries; combined semantic + BM25 keyword retrieval merged before ranking; business-owner-set relevance score threshold; expired docs excluded at metadata filter step, not at ranking.
-- Ingestion pipeline: validate input -> normalize -> structure-aware chunking -> embed + index -> mark superseded -> status pending/indexing/indexed/failed.
 - Workflow: LangGraph, 7 nodes (receive+normalize, load state+profile, mask PII, extract intent + branch, review draft max 2 revision rounds, send to original channel, save state + write trace).
 - Harness layers: workflow/checkpoint, tool, skills (5 reusable: intent extraction, policy answering, business lookup, ticket classification, answer checking), KB/RAG, memory, PII masking, reviewer, observability (run ID, trace with nodes/passages/tool calls/review/tokens/cost), test suite.
 - Tools: search_knowledge (read), business lookup tools (read, phone match required), task execution tools (write, needs explicit customer confirmation), create_ticket (write, no duplicate within 24h, summary <=300 chars), update_ticket (write, agent cannot resolve/close), get_ticket/list_tickets (read), get/update_customer_profile (allowlist fields, retention limit), send_message (write, only after reviewer approves).
@@ -21,4 +20,5 @@ description: "BizCare helpdesk agent project spec (SE373 Group 02): scope, 6 use
 - Safety: AI transparency notice on first message + widget; workspace isolation; secrets encrypted at rest, not in source, not in widget embed/logs/trace; no money/discount commitments (reviewer blocks); >=6 prompt injection + impersonation attack scenarios in test suite.
 - Out of scope: voice/video, Zalo OA/Instagram/TikTok/email, approval-gated refund/return/discount workflows, advanced urgency-based handoff, auto website crawling, MCP server exposure, on-demand aggregate reports, ERP/POS/payment gateway, e-invoicing.
 - Constraints: all sample data synthetic and small scale; Messenger dev mode only; sample businesses fictional.
+- THREE DATA STORES (decided): (1) Relational DB = MySQL, for frontend business logic and the source of truth for workspace IDs. (2) SeaweedFS = self-hosted S3-compatible object storage, source of truth for documents and versions with custom tagging; use cases = customer viewing, document blob store, versioning, document ingress. (3) Qdrant = vector DB, the ONLY source of truth for search; contains only the latest indexed version so searching outdated documents is impossible by design.
 - English translation of the full spec written to output/project-spec-en.md.
