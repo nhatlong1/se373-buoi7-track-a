@@ -142,10 +142,6 @@ def run_gui() -> None:
             height: 100% !important;
             max-height: 100% !important;
         }
-        .st-key-chat_col > div, .st-key-context_col > div {
-            height: 100% !important;
-            max-height: 100% !important;
-        }
         /* Clean up header spacing */
         h1, h2, h3 {
             margin-top: 0 !important;
@@ -210,7 +206,7 @@ def run_gui() -> None:
             file_name=f"transcript_{meta.short_id}.md",
             mime="text/markdown",
             icon=":material/download:",
-            use_container_width=True,
+            width="stretch",
         )
         st.download_button(
             "Download Raw Events (.json)",
@@ -218,7 +214,7 @@ def run_gui() -> None:
             file_name=f"events_{meta.short_id}.json",
             mime="application/json",
             icon=":material/data_object:",
-            use_container_width=True,
+            width="stretch",
         )
 
     # Main Two-Column View
@@ -327,7 +323,7 @@ def run_gui() -> None:
                         }
                     )
                 if event_rows:
-                    st.dataframe(event_rows, hide_index=True, use_container_width=True)
+                    st.dataframe(event_rows, hide_index=True, width="stretch")
                 else:
                     st.caption("No events recorded.")
 
@@ -346,7 +342,7 @@ def run_gui() -> None:
                                 }
                             )
                 if all_tools:
-                    st.dataframe(all_tools, hide_index=True, use_container_width=True)
+                    st.dataframe(all_tools, hide_index=True, width="stretch")
                 else:
                     st.caption("No tools were called in this conversation.")
 
