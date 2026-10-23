@@ -214,6 +214,8 @@ def test_turn_runner_handles_ai_message_with_none_tool_calls(agent_dirs):
 
 
 def test_turn_runner_abort(agent_dirs):
+    stop_event = threading.Event()
+
     class InfiniteStreamModel(BaseChatModel):
         @property
         def _llm_type(self) -> str:
@@ -227,7 +229,9 @@ def test_turn_runner_abort(agent_dirs):
 
         def _stream(self, messages, stop=None, run_manager=None, **kwargs):
             import time
-            while True:
+            for _ in range(50):
+                if stop_event.is_set():
+                    break
                 time.sleep(0.05)
                 yield ChatGenerationChunk(message=AIMessageChunk(content="more text..."))
 
@@ -245,6 +249,7 @@ def test_turn_runner_abort(agent_dirs):
     import time
     time.sleep(0.2)
     run.abort()
+    stop_event.set()
     finished = run.join(timeout=5.0)
     assert finished is True
     assert run.succeeded is False
