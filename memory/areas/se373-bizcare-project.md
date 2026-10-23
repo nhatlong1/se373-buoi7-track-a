@@ -1,9 +1,9 @@
 ---
-name: "se374-bizcare-project"
-description: "BizCare helpdesk agent project spec (SE374 Group 02): scope, 6 use cases, K1-K8 knowledge areas, quality thresholds, sample workspaces, architecture, three data stores"
+name: "se373-bizcare-project"
+description: "BizCare helpdesk agent project spec (SE373 Group 02): scope, 6 use cases, K1-K8 knowledge areas, quality thresholds, sample workspaces, architecture, three data stores"
 ---
 
-- Project: BizCare - AI customer support (CSKH) platform for small Vietnamese businesses, multi-tenant. SE374 Group 02, dated 18/10/2026.
+- Project: BizCare - AI customer support (CSKH) platform for small Vietnamese businesses, multi-tenant. SE373 Group 02, dated 18/10/2026.
 - Architecture principle: agent = model + harness. Model generates text/decides; harness provides workspace KB access, realizes actions via tools, accesses customer profile memory, masks PII, stores traces.
 - Channels: website chat widget + Facebook Messenger (dev mode, 24h window). Software: business Portal, customer channel, staff Inbox.
 - Roles: business owner/workspace admin, support agent (CSKH staff), end customer.

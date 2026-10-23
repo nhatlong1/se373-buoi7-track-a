@@ -1,5 +1,16 @@
 # Vector Database Decision Record — SE373 Final Project (BizCare)
 
+| Field | Value |
+|---|---|
+| Author | SE373 Group 02 |
+| Date | 2026-10-23 |
+| Version | v2.0 |
+| Status | Accepted |
+| Owner | SE373 Group 02 |
+| Reviewers | TBD |
+| Applies to | BizCare final project, knowledge base subsystem |
+| Related documents | `output/project-spec-en.md` (spec), `output/ingestion-pipeline.md`, `output/reindexing-strategy.md`, `output/retrieval.py` |
+
 **Context:** Single host, 4 vCPU / 12 GB RAM. Must co-host: Python backend, relational DB, vector DB, object storage, and a small text embedding model.
 **Requirements:** strong per-workspace data isolation, BM25-equivalent full-text search *alongside* vector similarity, vector search and full-text search independently callable, hybrid search preferred but optional, client-server (not embedded), low memory footprint.
 **Spec source:** `output/project-spec-en.md` (BizCare, SE373 Group 02, 18/10/2026).
@@ -31,7 +42,7 @@
 
 ### Why not the others
 
-- **Weaviate** — best-in-class built-in multi-tenancy and BM25+vector hybrid, but it is the heaviest of the realistic options (plan for 2–4 GB RSS). On a 12 GB shared host with Postgres, MinIO, and an embedding model loaded, it leaves too little headroom. Its Go runtime + segment cache does not release memory back to the OS as aggressively.
+- **Weaviate** — best-in-class built-in multi-tenancy and BM25+vector hybrid, but it is the heaviest of the realistic options (plan for 2–4 GB RSS). On a 12 GB shared host with MySQL, SeaweedFS, and an embedding model loaded, it leaves too little headroom. Its Go runtime + segment cache does not release memory back to the OS as aggressively.
 - **Milvus (standalone)** — requires etcd **and** MinIO **and** the Milvus process. Three extra services on 4 vCPU is not viable here. (Milvus Lite is embedded and Python-only, so it fails the client-server requirement.)
 - **Elasticsearch / OpenSearch** — superb BM25 and RRF hybrid, but JVM heap + off-heap Lucene structures typically cost 3–5 GB. It is a search engine being used as a vector DB; the memory cost is not justified at this scale.
 - **Chroma** — client-server mode exists but is not production-grade, has no BM25, and holds the index in the client process.
@@ -45,12 +56,14 @@
 
 Assumed: ~1M chunks × 384 dims, single-node, Docker.
 
-| Component | Typical RSS | Tuning lever |
+The RSS figures below are **estimates for sizing**, not measurements on the target host. Measure with `docker stats` once the stack is running and update this table before the report is written.
+
+| Component | Estimated RSS | Tuning lever |
 |---|---|---|
 | OS + Docker daemon | 0.5 – 1.0 GB | — |
-| FastAPI backend + int8 embedding model | 0.5 – 0.9 GB | ONNX Runtime, int8 weights |
-| PostgreSQL 16 | 1.5 – 2.5 GB | `shared_buffers = 1GB` |
-| MinIO (single node) | 0.3 – 0.6 GB | small disk, no erasure coding |
+| FastAPI backend + Q4 embedding model | 0.5 – 0.9 GB | LiteRT-LM, Q4 weights |
+| MySQL 8 | 1.5 – 2.5 GB | `innodb_buffer_pool_size` |
+| SeaweedFS (single node) | 0.3 – 0.6 GB | small disk, no erasure coding |
 | **Qdrant** (on-disk payload, int8 quant) | **0.5 – 1.5 GB** | quantization + `on_disk` |
 | **Total** | **3.3 – 6.5 GB** | ~5 GB headroom |
 
@@ -78,15 +91,20 @@ Option 2 is the best of both worlds and is worth benchmarking before the demo.
 
 ## 4. Embedding model (keep it small)
 
-| Model | Params | Dims | fp32 / int8 | Use when |
+| Model | Params | Dims | Quantisation | Use when |
 |---|---|---|---|---|
+| `embeddinggemma2` | TBD | TBD | Q4, LiteRT-LM | **Chosen — Vietnamese / mixed-language corpus** |
 | `all-MiniLM-L6-v2` | 22.7 M | 384 | 90 MB / 23 MB | English-only corpus |
-| `multilingual-e5-small` | 118 M | 384 | 470 MB / 120 MB | **Vietnamese / mixed-language corpus** |
-| `paraphrase-multilingual-MiniLM-L12-v2` | 118 M | 384 | 470 MB / 120 MB | Multilingual, slightly stronger |
+| `multilingual-e5-small` | 118 M | 384 | 470 MB / 120 MB | Superseded — replaced by `embeddinggemma2` |
 
-Recommendation for a VNUHCM project: **`multilingual-e5-small`**, int8-quantized, served via ONNX Runtime inside the backend process. E5 models need the `query:` / `passage:` prefix — bake that into your ingest and query helpers so it is never forgotten.
+**Chosen: `embeddinggemma2`, text-only mode, Q4 quantisation, LiteRT-LM format.** It runs in-process in the backend via LiteRT-LM.
 
-The corpus is Vietnamese (spec 1.4.1), so `multilingual-e5-small` is the right default. Note the spec also requires handling unaccented and abbreviated text (EV-INTENT-02); test whether the embedding model degrades on unaccented Vietnamese, and consider a text normalization step (add diacritics back) before embedding if recall suffers.
+Two properties must be read from the deployed checkpoint before any collection is created, and both are tracked as open questions in `output/ingestion-pipeline.md` §9:
+
+- **Vector dimension.** A collection created with the wrong size fails at upsert time, not at startup. Read the dimension from the checkpoint configuration and set it in one place.
+- **Task prefixes.** The earlier E5 model required `query: ` and `passage: ` prefixes. Whether `embeddinggemma2` does is unconfirmed. If it does, the prefixes belong in the two embedding helpers, never at call sites.
+
+The corpus is Vietnamese (spec 1.4.1), so a multilingual model is the right default. Note the spec also requires handling unaccented and abbreviated text (EV-INTENT-02); test whether the embedding model degrades on unaccented Vietnamese, and consider a diacritic-restoration step before embedding if recall suffers.
 
 ---
 
@@ -95,14 +113,14 @@ The corpus is Vietnamese (spec 1.4.1), so `multilingual-e5-small` is the right d
 The spec mandates **one collection per workspace** (2.2.b), so the earlier "one shared collection + tenant filter" design was replaced. The revised design has two layers of defence:
 
 1. **Collection boundary** — `ws_<workspace_id>`. A query against the wrong collection returns nothing.
-2. **Payload filter** — every query additionally pins `workspace_id` and excludes `status != active`.
+2. **Payload filter** — every query additionally pins `workspace_id`, requires `status == active`, and requires `indexed == true`.
 
 Rules to enforce:
 
 1. `workspace_id` is a `KEYWORD` payload field with an index.
 2. The collection name is derived from the authenticated session, never from a request body. The agent has no ability to choose a different workspace (spec 2.2.b).
 3. Every read path goes through a single wrapper that injects the filter. No raw client calls in route handlers.
-4. Expired (`superseded`) documents are excluded at the **metadata filter step**, not deferred to ranking (spec 2.2.b).
+4. Expired (`superseded`) documents are excluded at the **metadata filter step**, not deferred to ranking (spec 2.2.b). The re-index path also deletes the old version's chunks, so the filter is a second line of defence rather than the only one.
 5. The relevance score threshold is set by the business owner in the agent config; chunks below it must not be used to answer (spec 2.2.b, 3.4.a).
 6. Regression test: insert a doc in workspace A, assert workspace B's vector, FTS, and hybrid queries all return zero hits.
 
@@ -123,7 +141,7 @@ All three are independently callable; hybrid is a composition of the other two, 
 ## 7. Deployment checklist
 
 1. `docker compose up -d` with the provided `output/docker-compose.yml` (mem limits are set per service to enforce the budget).
-2. Create the collection with the text index and int8 quantization (see `retrieval.py::ensure_collection`).
+2. Create the collection with the text index and int8 quantization (see `retrieval.py::ensure_collection`), using the dimension read from the deployed checkpoint.
 3. Ingest with `workspace_id` stamped server-side and the full spec metadata set.
 4. Smoke-test: vector-only, FTS-only, hybrid, the cross-workspace isolation test, and the superseded-exclusion test.
 5. Monitor `docker stats` — if Qdrant exceeds ~2 GB, enable `on_disk_payload` and re-index with product quantization.
@@ -136,4 +154,14 @@ All three are independently callable; hybrid is a composition of the other two, 
 - **Chose Qdrant over Elasticsearch** — BM25 quality is not the bottleneck at this data scale; RAM is.
 - **Kept a separate vector server** (per stated preference) rather than pgvector, but documented pgvector as the fallback if the host turns out to be smaller than specified.
 - **Revised isolation design from shared-collection to per-workspace collections** after reading the spec (2.2.b), which explicitly requires a collection per workspace and forbids cross-collection queries.
-- **Kept `multilingual-e5-small`** rather than an English-only model, because the corpus and all test scenarios are Vietnamese.
+- **Replaced `multilingual-e5-small` with `embeddinggemma2`** (text-only, Q4, LiteRT-LM) for the smaller memory footprint and the LiteRT-LM runtime.
+- **Replaced PostgreSQL with MySQL** as the relational store for the frontend business logic and as the source of truth for workspace IDs.
+- **Replaced MinIO with SeaweedFS** as the S3-compatible object store for document originals and versions.
+- **Adopted per-document re-indexing** with staged writes, replacing the previous whole-store re-index workflow. See `output/reindexing-strategy.md`.
+
+## Appendix A: Change log
+
+| Version | Date | Author | Change |
+|---|---|---|---|
+| v1.0 | 2026-10-23 | SE373 Group 02 | Initial decision record. Qdrant selected; isolation revised to per-workspace collections. |
+| v2.0 | 2026-10-23 | SE373 Group 02 | Stack updated to MySQL + SeaweedFS; embedding model changed to `embeddinggemma2` (Q4, LiteRT-LM); superseded content deleted rather than only flagged; superseded-content and staging filters added; cross-references to the ingestion and re-indexing documents added. |

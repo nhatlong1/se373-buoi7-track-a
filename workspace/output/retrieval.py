@@ -35,21 +35,35 @@ from qdrant_client import QdrantClient, models
 QDRANT_URL = "http://localhost:6333"
 
 # Embedding model must match the one used at ingest time.
-# For a Vietnamese / mixed-language corpus use multilingual-e5-small (384 dims).
-# For English-only use all-MiniLM-L6-v2 (384 dims).
-EMBED_DIM = 384
-EMBED_MODEL = "multilingual-e5-small"
+#
+# embeddinggemma2, text-only mode, Q4 quantisation, LiteRT-LM format.
+# The dimension must be read from the deployed checkpoint configuration
+# before any collection is created - a wrong size fails at upsert time,
+# not at startup. See output/ingestion-pipeline.md section 9, Q1.
+EMBED_MODEL = "embeddinggemma2"
+EMBED_DIM: int | None = None  # TBD - read from the checkpoint config
 
-# E5 models require asymmetric prefixes. Bake them in here so they are
-# never forgotten at call sites.
-QUERY_PREFIX = "query: "
-PASSAGE_PREFIX = "passage: "
+# Task prefixes. The previous multilingual-e5-small model required
+# asymmetric "query: " / "passage: " prefixes. Whether embeddinggemma2
+# does is unconfirmed - see output/ingestion-pipeline.md section 9, Q2.
+# If prefixes are required, bake them into the two embedding helpers
+# below, never into call sites.
+QUERY_PREFIX = ""
+PASSAGE_PREFIX = ""
 
 # Chunk status values (spec 2.2.b metadata table).
 STATUS_ACTIVE = "active"
 STATUS_SUPERSEDED = "superseded"
 
+# Staging flag. Chunks are written with indexed=False and flipped to
+# True once the write is verified complete, so a partially written
+# document is never retrievable. See output/reindexing-strategy.md.
+INDEXED_TRUE = True
+INDEXED_FALSE = False
+
 # Document types (spec 2.2.b metadata table).
+# The spec enum has no "txt" member. A TXT upload is normalized to text
+# and recorded as "markdown" - see output/ingestion-pipeline.md Q4.
 DOC_TYPES = ("markdown", "html", "pdf", "csv", "xlsx")
 
 
@@ -77,6 +91,12 @@ def collection_name(workspace_id: str) -> str:
 
 def ensure_collection(client: QdrantClient, workspace_id: str) -> None:
     """Create the workspace collection with a BM25 text index and int8 quantization."""
+    if EMBED_DIM is None:
+        raise RuntimeError(
+            "EMBED_DIM is not set. Read the vector dimension from the "
+            "deployed embeddinggemma2 checkpoint configuration first."
+        )
+
     name = collection_name(workspace_id)
     if client.collection_exists(name):
         return
@@ -126,6 +146,11 @@ def ensure_collection(client: QdrantClient, workspace_id: str) -> None:
     )
     client.create_payload_index(
         collection_name=name,
+        field_name="indexed",
+        field_schema=models.PayloadSchemaType.BOOL,
+    )
+    client.create_payload_index(
+        collection_name=name,
         field_name="version",
         field_schema=models.PayloadSchemaType.KEYWORD,
     )
@@ -146,8 +171,9 @@ def workspace_filter(workspace_id: str) -> models.Filter:
     Two layers of defence:
       1. The collection itself is per-workspace, so a wrong collection
          name is already a hard boundary.
-      2. The payload filter additionally pins workspace_id and excludes
-         expired documents at the metadata filter step (spec 2.2.b).
+      2. The payload filter additionally pins workspace_id, requires the
+         chunk to be active, and requires the staged write to have been
+         completed (spec 2.2.b).
     """
     return models.Filter(
         must=[
@@ -158,6 +184,10 @@ def workspace_filter(workspace_id: str) -> models.Filter:
             models.FieldCondition(
                 key="status",
                 match=models.MatchValue(value=STATUS_ACTIVE),
+            ),
+            models.FieldCondition(
+                key="indexed",
+                match=models.MatchValue(value=INDEXED_TRUE),
             ),
         ]
     )
@@ -181,6 +211,7 @@ class Chunk:
     doc_type: str
     version: str
     status: str = STATUS_ACTIVE
+    indexed: bool = INDEXED_FALSE
     extra: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -196,7 +227,11 @@ def upsert_chunks(
     chunks: Sequence[Chunk],
     embeddings: Sequence[Sequence[float]],
 ) -> None:
-    """Write chunks for one workspace.
+    """Write chunks for one workspace, staged.
+
+    Chunks are written with indexed=False. The caller verifies the chunk
+    count and then calls mark_indexed() to flip the flag. A partially
+    written document is therefore never retrievable.
 
     workspace_id is stamped here from the authenticated session, never
     taken from the request body.
@@ -219,6 +254,7 @@ def upsert_chunks(
                 "doc_type": chunk.doc_type,
                 "version": chunk.version,
                 "status": chunk.status,
+                "indexed": chunk.indexed,
                 "body": chunk.text,   # the BM25-indexed field
                 **chunk.extra,
             },
@@ -229,6 +265,36 @@ def upsert_chunks(
     client.upsert(
         collection_name=collection_name(workspace_id),
         points=points,
+        wait=True,
+    )
+
+
+def mark_indexed(
+    client: QdrantClient,
+    workspace_id: str,
+    doc_id: str,
+    version: str,
+) -> None:
+    """Flip the staging flag once the write is verified complete.
+
+    Must not run before the chunk count has been verified. See
+    output/reindexing-strategy.md section 4.3.
+    """
+    client.set_payload(
+        collection_name=collection_name(workspace_id),
+        payload={"indexed": INDEXED_TRUE},
+        points_selector=models.FilterSelector(
+            filter=models.Filter(
+                must=[
+                    models.FieldCondition(key="workspace_id",
+                                         match=models.MatchValue(value=workspace_id)),
+                    models.FieldCondition(key="doc_id",
+                                         match=models.MatchValue(value=doc_id)),
+                    models.FieldCondition(key="version",
+                                         match=models.MatchValue(value=version)),
+                ]
+            )
+        ),
         wait=True,
     )
 
@@ -335,18 +401,20 @@ def supersede_document(
     client: QdrantClient,
     workspace_id: str,
     doc_id: str,
-    new_version: str,
 ) -> None:
-    """Mark every chunk of the current version as superseded.
+    """Remove the current version's chunks from the vector database.
 
-    The old chunks stay in the vector database but are filtered out at
-    the metadata filter step, so they never reach the candidate set.
-    The document store keeps the old version for history and trace
-    reconciliation.
+    The vector database holds only the latest indexed version, so the
+    old chunks are deleted rather than flagged and filtered. The
+    document store keeps the old version's original file and metadata,
+    so it stays viewable in history and trace citations remain
+    reconcilable.
+
+    The status filter in workspace_filter() remains as a second line of
+    defence and is still covered by test_superseded_excluded.
     """
-    client.set_payload(
+    client.delete(
         collection_name=collection_name(workspace_id),
-        payload={"status": STATUS_SUPERSEDED},
         points_selector=models.FilterSelector(
             filter=models.Filter(
                 must=[
@@ -354,8 +422,6 @@ def supersede_document(
                                          match=models.MatchValue(value=workspace_id)),
                     models.FieldCondition(key="doc_id",
                                          match=models.MatchValue(value=doc_id)),
-                    models.FieldCondition(key="status",
-                                         match=models.MatchValue(value=STATUS_ACTIVE)),
                 ]
             )
         ),
@@ -418,6 +484,7 @@ def test_isolation(client: QdrantClient, embed_fn) -> None:
         ],
         [embed_fn(PASSAGE_PREFIX + marker + " confidential content")],
     )
+    mark_indexed(client, ws_a, "iso-1", "v1")
 
     vec = embed_fn(QUERY_PREFIX + marker)
 
@@ -466,10 +533,11 @@ def test_superseded_excluded(client: QdrantClient, embed_fn) -> None:
         ],
         [embed_fn(PASSAGE_PREFIX + marker + " old policy text")],
     )
+    mark_indexed(client, ws, "sup-1", "v1")
 
     assert fulltext_search(client, ws, marker, limit=5), "precondition: doc is active"
 
-    supersede_document(client, ws, "sup-1", new_version="v2")
+    supersede_document(client, ws, "sup-1")
 
     assert not fulltext_search(client, ws, marker, limit=5), \
         "SUPERSEDED FAIL: expired document still returned by BM25"
@@ -477,3 +545,45 @@ def test_superseded_excluded(client: QdrantClient, embed_fn) -> None:
         "SUPERSEDED FAIL: expired document still returned by vector search"
 
     print("superseded exclusion OK")
+
+
+def test_staged_chunks_not_retrievable(client: QdrantClient, embed_fn) -> None:
+    """A chunk written but not yet marked indexed must not be retrievable.
+
+    Covers the staged-write guarantee in output/reindexing-strategy.md
+    section 4.2.
+    """
+    ws = "moc-mien-florist"
+    marker = "zzz-staged-marker-7c2d"
+    now = datetime.now(timezone.utc)
+
+    upsert_chunks(
+        client,
+        ws,
+        [
+            Chunk(
+                doc_id="staged-1",
+                text=f"{marker} partially written content",
+                title="Staged write",
+                uri="test://staged-1",
+                section="Test",
+                chunk_index=0,
+                updated_at=now,
+                doc_type="markdown",
+                version="v1",
+            )
+        ],
+        [embed_fn(PASSAGE_PREFIX + marker + " partially written content")],
+    )
+
+    assert not fulltext_search(client, ws, marker, limit=5), \
+        "STAGING FAIL: chunk was retrievable before being marked indexed"
+    assert not vector_search(client, ws, embed_fn(QUERY_PREFIX + marker), limit=5), \
+        "STAGING FAIL: chunk was retrievable before being marked indexed"
+
+    mark_indexed(client, ws, "staged-1", "v1")
+
+    assert fulltext_search(client, ws, marker, limit=5), \
+        "STAGING FAIL: chunk was not retrievable after being marked indexed"
+
+    print("staged write OK")

@@ -3,42 +3,35 @@
 # Pin image versions before your final submission for reproducibility.
 
 services:
-  postgres:
-    image: postgres:16-alpine
+  mysql:
+    image: mysql:8.4
     environment:
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: app
-      POSTGRES_DB: app
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: bizcare
+      MYSQL_USER: app
+      MYSQL_PASSWORD: app
     command:
-      - postgres
-      - -c
-      - shared_buffers=1GB
-      - -c
-      - effective_cache_size=3GB
-      - -c
-      - work_mem=16MB
-      - -c
-      - maintenance_work_mem=256MB
-      - -c
-      - max_connections=50
+      - --innodb-buffer-pool-size=1G
+      - --innodb-log-buffer-size=16M
+      - --max-connections=50
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - mysqldata:/var/lib/mysql
     mem_limit: 2g
     ports:
-      - "5432:5432"
+      - "3306:3306"
 
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+  seaweedfs:
+    image: seaweedfs/seaweedfs:latest
+    command: server -dir=/data -s3 -s3.port=8333 -master.port=9333 -volume.port=8080
     volumes:
-      - miniodata:/data
+      - seaweeddata:/data
     mem_limit: 768m
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "8333:8333"   # S3 API
+      - "9333:9333"   # master
+      - "8080:8080"   # volume / filer
 
   qdrant:
     image: qdrant/qdrant:latest
@@ -51,15 +44,16 @@ services:
       - "6334:6334"   # gRPC
 
   # Your FastAPI backend. Build from your own Dockerfile.
-  # The embedding model is loaded in-process via ONNX Runtime (int8).
+  # The embedding model (embeddinggemma2, Q4, LiteRT-LM) is loaded
+  # in-process via LiteRT-LM.
   # backend:
   #   build: .
-  #   depends_on: [postgres, minio, qdrant]
+  #   depends_on: [mysql, seaweedfs, qdrant]
   #   mem_limit: 1536m
   #   ports:
   #     - "8000:8000"
 
 volumes:
-  pgdata:
-  miniodata:
+  mysqldata:
+  seaweeddata:
   qdrantdata:

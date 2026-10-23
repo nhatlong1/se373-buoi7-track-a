@@ -1,5 +1,7 @@
 # Qdrant server config tuned for a 12 GB shared host.
-# Goal: keep RSS under ~1.5 GB for a ~1M x 384 int8 collection.
+# Goal: keep RSS under ~1.5 GB for a ~1M chunk int8 collection.
+# The vector dimension depends on the deployed embeddinggemma2 checkpoint
+# and is set at collection creation, not here.
 
 log_level: INFO
 
@@ -19,7 +21,7 @@ storage:
       always_ram: false
 
 performance:
-  # 4 vCPU shared with Postgres, MinIO and the backend: stay conservative.
+  # 4 vCPU shared with MySQL, SeaweedFS and the backend: stay conservative.
   max_search_threads: 2
   max_optimization_threads: 1
   max_workers_threads: 2
