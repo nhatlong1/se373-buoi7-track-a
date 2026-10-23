@@ -121,8 +121,35 @@ def run_gui() -> None:
     st.html(
         """
         <style>
-        [data-testid="stMainBlockContainer"] { padding-top: 2rem; padding-bottom: 1rem; }
-        .st-key-chat_col, .st-key-context_col { height: calc(100dvh - 12rem) !important; }
+        [data-testid="stAppScrollToBottomContainer"] {
+            overflow: hidden !important;
+        }
+        [data-testid="stMainBlockContainer"] {
+            padding-top: 3.5rem !important;
+            padding-bottom: 0.5rem !important;
+            padding-left: 2rem !important;
+            padding-right: 2rem !important;
+            max-width: 100% !important;
+        }
+        /* Stretch both chat and context containers to flush with viewport bottom */
+        [data-testid="stLayoutWrapper"]:has(> .st-key-chat_col),
+        [data-testid="stLayoutWrapper"]:has(> .st-key-context_col) {
+            height: calc(100dvh - 8rem) !important;
+            max-height: calc(100dvh - 8rem) !important;
+            flex-basis: auto !important;
+        }
+        .st-key-chat_col, .st-key-context_col {
+            height: 100% !important;
+            max-height: 100% !important;
+        }
+        .st-key-chat_col > div, .st-key-context_col > div {
+            height: 100% !important;
+            max-height: 100% !important;
+        }
+        /* Clean up header spacing */
+        h1, h2, h3 {
+            margin-top: 0 !important;
+        }
         </style>
         """
     )
@@ -130,9 +157,14 @@ def run_gui() -> None:
     traces_dir = paths.TRACES_DIR
     convs = list_conversations(traces_dir)
 
-    header = st.container(horizontal=True, vertical_alignment="center")
-    header.title(":material/history_edu: Trace & Conversation Viewer")
-    header.caption(f"Inspecting trace logs from `{traces_dir.resolve()}`")
+    head_col1, head_col2 = st.columns([7, 3], vertical_alignment="center")
+    with head_col1:
+        st.markdown(
+            "### :material/history_edu: Trace & Conversation Viewer",
+            help=f"Inspecting trace logs from {traces_dir.resolve()}",
+        )
+    with head_col2:
+        st.caption(f":material/folder: `{traces_dir.name}/` ({len(convs)} recorded sessions)")
 
     if not convs:
         st.warning(f"No conversation traces found in `{traces_dir}`.")
@@ -194,8 +226,8 @@ def run_gui() -> None:
 
     # Left Column: Conversation Turns & Inline Tools
     with chat_col:
-        st.subheader(f"Conversation Flow ({meta.turn_count} turns)")
-        with st.container(height=650, border=True, key="chat_col"):
+        st.markdown(f"**Conversation Flow ({meta.turn_count} turns)**")
+        with st.container(height=900, border=True, key="chat_col"):
             for turn in conv.turns:
                 with st.chat_message("user"):
                     st.markdown(f"**[Turn {turn.chat_turn}]**")
@@ -232,8 +264,8 @@ def run_gui() -> None:
 
     # Right Column: State & Context Inspector
     with state_col:
-        st.subheader("Trace & Context Inspector")
-        with st.container(height=650, border=True, key="context_col"):
+        st.markdown("**Trace & Context Inspector**")
+        with st.container(height=900, border=True, key="context_col"):
             tabs = st.tabs(["Context Snapshots", "Events Log", "Tool Summary"])
 
             # Tab 1: Context Snapshots
