@@ -1,0 +1,26 @@
+{
+    "request": {
+        "max_completion_tokens": 65536,
+        "messages": [
+            "TRUNCATED"
+        ]
+    },
+    "response": {
+        "choices": [
+            {
+                "finish_reason": "stop",
+                "index": 0,
+                "message": {
+                    "content": "The `document-writing` skill is authored and verified.\n\n## Structure\n\n```\nskills/document-writing/\n├── SKILL.md\n└── references/\n    ├── general.md                        (catch-all)\n    ├── research-report.md\n    ├── code-review-report.md\n    ├── code-analysis-report.md\n    ├── spec-analysis-report.md\n    ├── technical-specification.md\n    ├── documentation.md\n    ├── graphical-design-document.md\n    ├── architectural-design-document.md\n    ├── system-design-document.md\n    └── academic-paper.md\n```\n\nAll 11 templates are flat in `references/`, no nested directories. Every filename in the SKILL.md index matches a file on disk.\n\n## What the SKILL.md contains\n\n- **Trigger section** — when to use, and an explicit \"when not to use\" (chat replies, commit messages, code comments, narrow edits) so it doesn't fire on short-form text.\n- **7-step procedure** — classify type → establish the contract (audience, purpose, decision, constraints, evidence) → gather evidence → outline → draft → self-review → deliver.\n- **29 writing rules** in five groups: purpose/audience, structure, language, evidence/honesty, presenting information, mechanics.\n- **Shared Report Spine** — the common structure across the four report types.\n- **Template index** with a \"use for\" and \"when to use\" column, plus a disambiguation section for the five close-relative pairs.\n- **18-item self-review checklist** and an output specification.\n\n## On your specific questions\n\n**What the four report types share.** They all answer the same sequence of reader questions, so I baked one spine into SKILL.md and had each template specialize it: metadata → executive summary → scope and method → findings → evidence → analysis → conclusion/verdict → recommendations → limitations → appendices. The two sections most often missing, and the two that make a report credible, are **scope and method** and **limitations** — the template says to cut the summary's length, not those two, if the report is short.\n\n**Merges I made.** Academic paper and white paper share one file with two clearly separated variants, because the difference is register and emphasis, not structure. Code review and code analysis are separate files because the verdict and severity-ranking machinery in review has no place in a descriptive codebase study.\n\n**The `general` catch-all** is deliberately permissive — it constrains quality, not shape. It gives a default structure to start from but explicitly says to drop sections that would be empty, and it keeps the full quality floor (active voice, traceable claims, no invented facts, metadata block).\n\n**One thing worth flagging:** the templates are prescriptive about *structure* but deliberately not about *length*. A template that implied a page count would push the agent toward padding, which is the failure mode the rules are trying to prevent. The `general.md` template states this directly — \"a short document that answers the question beats a long one that circles it.\"\n\nThe skill enters the catalog on the next turn, per the freshness rule in the authoring guidelines.",
+                    "role": "assistant"
+                }
+            }
+        ],
+        "created": 0,
+        "generationId": "",
+        "id": "",
+        "model": "minimax/minimax-m3.1-flash",
+        "object": "chat.completion",
+        "usage": {}
+    }
+}

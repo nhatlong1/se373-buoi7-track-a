@@ -1,0 +1,26 @@
+{
+    "request": {
+        "max_completion_tokens": 65536,
+        "messages": [
+            "TRUNCATED"
+        ]
+    },
+    "response": {
+        "choices": [
+            {
+                "finish_reason": "stop",
+                "index": 0,
+                "message": {
+                    "content": "Hello, certain-acumen-k5cc4. Done — all work is complete and verified.\n\n## Course ID: back to SE373\n\nThe SE374 label was reverted. `output/project-spec-en.md` already read SE373, so it needed no change. The other four files now read SE373 consistently, and the memory profile records that SE374 was a test and the correct ID is SE373. I also renamed the two memory items from `se374-*` to `se373-*` so the bucket names match.\n\n## New documents\n\n**`output/ingestion-pipeline.md`** — the 7-stage pipeline (Validate → Normalize → Chunk → Embed → Index → Mark as effective → Report status), format-specific rules, chunk metadata, the `pending → indexing → indexed | failed` status model, and the data-store ownership split.\n\n**`output/reindexing-strategy.md`** — closes the open item. Per-document re-index with hash-based change detection (`source_sha256` on file bytes, `content_sha256` on normalized text, compared at write time rather than on a timer). The run order is: normalize/chunk/embed **first**, then delete the old chunks, then write the new ones staged, verify the count, flip `indexed=true`, then commit the effective version and the audit log.\n\nThe deliberate trade-off: the old version is deleted before the new one goes live, so there is a brief window where the document is absent rather than stale. A missing answer is recoverable; a stale policy answer is a business harm. The window contains only collection writes, no embedding work.\n\n## Updated artifacts\n\n| File | Change |\n|---|---|\n| `vector-db-decision.md` | v2.0. MySQL + SeaweedFS, `embeddinggemma2` (Q4, LiteRT-LM), superseded content deleted rather than only flagged, memory figures labelled as estimates |\n| `retrieval.py` | New model constants, `indexed` staging flag in the filter, `mark_indexed()`, `supersede_document()` now deletes, new `test_staged_chunks_not_retrievable` |\n| `docker-compose.yml` | Postgres → MySQL 8.4, MinIO → SeaweedFS |\n| `qdrant-config.yaml` | Stale \"384 dims\" comment removed, Postgres/MinIO reference corrected |\n\n## Two things to flag\n\n**The `indexed` field is an addition to the spec's metadata table.** The spec's `status` enum has exactly two values, so I added a separate boolean rather than a third enum value. The retrieval filter requires `status == active` **and** `indexed == true`. This is documented in `ingestion-pipeline.md` §4 — worth a sentence in the technical report explaining the deviation.\n\n**Four items are genuinely unresolved, not guessed.** The embedding dimension of the deployed `embeddinggemma2` checkpoint, whether it needs `query:`/`passage:` prefixes, the chunk size that meets Recall@5 ≥ 0.85, and whether TXT should be recorded as `doc_type = markdown` or the spec enum extended. All are marked TBD with owners and target dates. `retrieval.py` now raises at collection creation if `EMBED_DIM` is unset, so a wrong dimension fails fast rather than at upsert time.\n\nOne spec ambiguity I could not resolve from the documents: the spec's `doc_type` enum has no `txt` member, but TXT is a supported upload format. I recorded TXT as `markdown` after normalization and logged it as Q4 for your group to decide.",
+                    "role": "assistant"
+                }
+            }
+        ],
+        "created": 0,
+        "generationId": "",
+        "id": "",
+        "model": "minimax/minimax-m3.1-flash",
+        "object": "chat.completion",
+        "usage": {}
+    }
+}
