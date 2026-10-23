@@ -212,9 +212,26 @@ def load_conversation(traces_dir: Path, identifier: str | Path) -> ReplayedConve
                 turn_error = ev.get("error", "Turn failed")
 
         # Recover assistant answer:
-        # Tier 1: Look at the next turn's first model_request snapshot
+        # Tier 1: Direct answer recorded on run_completed (or other turn event)
         assistant_answer = ""
-        if idx + 1 < len(parsed_turns_raw):
+        for ev in reversed(events):
+            if ev.get("answer"):
+                assistant_answer = ev["answer"]
+                break
+
+        # Tier 2: Reconstruct from model_response message payloads in this turn
+        if not assistant_answer:
+            resp_parts = []
+            for ev in events:
+                if ev.get("type") == "model_response":
+                    msg = ev.get("message")
+                    if isinstance(msg, dict) and isinstance(msg.get("content"), str) and msg["content"].strip():
+                        resp_parts.append(msg["content"].strip())
+            if resp_parts:
+                assistant_answer = "\n\n".join(resp_parts)
+
+        # Tier 3 (Legacy fallback): Look at the next turn's first model_request snapshot
+        if not assistant_answer and idx + 1 < len(parsed_turns_raw):
             next_events = parsed_turns_raw[idx + 1]["events"]
             for nev in next_events:
                 if nev.get("type") == "model_request":
@@ -226,14 +243,7 @@ def load_conversation(traces_dir: Path, identifier: str | Path) -> ReplayedConve
                             break
                     break
 
-        # Tier 2: Check if run_completed or any event in this turn had answer text
-        if not assistant_answer:
-            for ev in reversed(events):
-                if ev.get("answer"):
-                    assistant_answer = ev.get("answer")
-                    break
-
-        # Tier 3: Check assistant messages in this turn's snapshots (strictly after this turn's user message)
+        # Tier 4 (Legacy fallback): Check assistant messages in this turn's snapshots (strictly after this turn's user message)
         if not assistant_answer and turn_snapshots:
             last_snap_msgs = turn_snapshots[-1].get("messages", [])
             last_user_idx = -1

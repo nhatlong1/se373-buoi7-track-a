@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 from typing import Any
 
@@ -131,6 +132,20 @@ def test_turn_runner_streaming_no_text_duplication(agent_dirs):
 
     assert "Thinking about listing files..." in run.turn["answer"]
     assert "Listing finished successfully." in run.turn["answer"]
+
+    # Verify JSONL trace file persisted on disk
+    trace_lines = [
+        json.loads(line)
+        for line in run.writer.path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    completed_ev = next(e for e in trace_lines if e["type"] == "run_completed")
+    assert completed_ev["answer"] == run.turn["answer"]
+    assert completed_ev["aborted"] is False
+
+    model_responses = [e for e in trace_lines if e["type"] == "model_response"]
+    assert len(model_responses) >= 2
+    assert model_responses[-1]["message"]["content"] == "Listing finished successfully."
 
 
 def test_turn_runner_failure_rolls_back_observer(agent_dirs):

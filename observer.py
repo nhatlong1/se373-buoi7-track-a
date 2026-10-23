@@ -135,6 +135,7 @@ class ObserverMiddleware(AgentMiddleware):
                     "event": "model_response",
                     "data": {
                         "elapsed_ms": elapsed_ms,
+                        "message": serialize_message(last) if last is not None else None,
                         "tool_calls_requested": [
                             {"id": c.get("id"), "name": c.get("name")}
                             for c in ((last.tool_calls or []) if last else [])
@@ -273,6 +274,8 @@ class Observer:
             event.update(data)
             if self.snapshots and self.snapshots[-1]["run_id"] == self.run_id:
                 self.snapshots[-1]["usage"] = data.get("usage")
+                if data.get("message") is not None:
+                    self.snapshots[-1]["response_message"] = data.get("message")
         elif event_type == "tool_started":
             self.tool_calls += 1
             self.running_tools[data["tool_call_id"]] = data["tool_name"]

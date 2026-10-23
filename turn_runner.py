@@ -26,7 +26,7 @@ from trace import TraceWriter
 
 
 def compact_event(event: dict) -> dict:
-    item = {k: v for k, v in event.items() if k != "snapshot"}
+    item = {k: v for k, v in event.items() if k not in ("snapshot", "message")}
     if event.get("type") == "model_request":
         snap = event.get("snapshot") or {}
         item["message_count"] = snap.get("message_count", 0)
@@ -150,9 +150,15 @@ class TurnRun:
                     if el.get("type") == "text" and el.get("content", "").strip()
                 ]
                 self.turn["answer"] = "\n\n".join(text_parts)
+                self.observer.sync_messages(self.working)
                 self._emit(
                     "run_completed",
-                    {"elements_count": len(self.elements), "answer_chars": len(self.turn["answer"])},
+                    {
+                        "elements_count": len(self.elements),
+                        "answer_chars": len(self.turn["answer"]),
+                        "answer": self.turn["answer"],
+                        "aborted": self.abort_requested.is_set(),
+                    },
                 )
                 self.succeeded = not self.abort_requested.is_set()
         except BaseException as exc:  # record every termination cause, including SystemExit
